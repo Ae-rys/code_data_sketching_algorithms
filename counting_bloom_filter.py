@@ -108,16 +108,17 @@ class Count_sketch_bloom_filter:
                 * self.s_functions[i](element)
                 for i in range(self.k)
             ]
-        )  # Can we do better in terms of space/time complexity?
-        # I could calculate it on the fly like the min
+        )
 
     def display(self, rank, real_items, data):
-        print("rank {} :".format(rank))
         element = real_items[rank][1]
-        array = sorted([
-            self.array[self.hash_functions[i](element)] * self.s_functions[i](element)
-            for i in range(self.k)
-        ])
+        array = sorted(
+            [
+                self.array[self.hash_functions[i](element)]
+                * self.s_functions[i](element)
+                for i in range(self.k)
+            ]
+        )
         maximum = max(array)
         minimum = min(array)
         median = statistics.median(array)
@@ -137,34 +138,6 @@ class Count_sketch_bloom_filter:
                 for i in range(self.k)
             ]
         )
-        # print("   min :", minimum),
-        # print("   max :", maximum)
-        # print("   delta/max :", (maximum - minimum) / maximum)
-        # print("   max/min :", (maximum) / minimum)
-        # print("   dispersion:", dispersion)
-
-        # plt.figure(figsize=(8, 6))
-        # plt.scatter(
-        #     [i for i in range(self.k)], array, color="blue", label="Count_sketch_bloom_filter", alpha=0.6
-        # )
-        # plt.axhline(y=real_items[rank][0], color="red", label="true value")
-        # plt.scatter([median_i], [median], color="green", label="median", alpha=0.6)
-        # # plt.scatter(x_min, y_min, color="blue", label="min", alpha=0.6)
-        # plt.xlabel("i-th row")
-        # plt.ylabel("value found in the i-th row")
-        # plt.title(
-        #     "Count Sketch (t = {} ; b = {} ; N = {} ; E = {} ; parameter = {})".format(
-        #         t, b, N, E, parameter
-        #     )
-        # )
-        # plt.legend()
-        # plt.grid(True)
-        # plt.tight_layout()
-
-        # plt.savefig("dispersion_rank_{}.png".format(rank))
-
-        # print()
-
         data["Rank"].append(rank)
         data["Values"].append(array)
         data["True value"].append(real_items[rank][0])
@@ -260,50 +233,27 @@ if __name__ == "__main__":
     x_count, y_count = zip(*occ_count)
     x_real, y_real = zip(*[(i + 1, real_items[i][0]) for i in range(len(real_items))])
 
-    data = {
-    'Rank': [],
-    'Values': [],
-    'True value': []
-    }
+    data = {"Rank": [], "Values": [], "True value": []}
 
     for i in range(2000):
         count_sketch.display(i, real_items, data)
 
-    # for i in range(20,31):
-    #     count_sketch.display(i, real_items, data)
-
-    # for i in range(40, 51):
-    #     count_sketch.display(i, real_items, data)
-    
-    # for i in range(100, 111):
-    #     count_sketch.display(i, real_items, data)
-    # for i in range(500, 511):
-    #     count_sketch.display(i, real_items, data)
-    # for i in range(1000, 1011):
-    #     count_sketch.display(i, real_items, data)
-    # for i in range(2000, 2011):
-    #     count_sketch.display(i, real_items, data)
-
-
     df = pd.DataFrame(data)
 
-    # Apply the median condition on each row
-    df_filtered = df[df['Values'].apply(lambda v: np.median(v) >= df['True value'][30])]
-
-    print(df_filtered)
-
-    df_filtered.to_csv("stats.csv", index=False)
-
+    df.to_csv("stats_in_the_count_sketch.csv", index=False)
 
     print("Top 10 elements:")
+    print()
     for i in range(10):
-        print("rank {} : {}".format(i, real_items[i][0]))
+        print("#occurences rank {} : {}".format(i + 1, real_items[i][0]))
 
     plt.figure(figsize=(8, 6))
+
+    plt.scatter(x_count, y_count, color="green", label="Count Sketch", alpha=0.6)
+
     plt.scatter(
         x_count_min, y_count_min, color="blue", label="Count-Min Sketch", alpha=0.6
     )
-    plt.scatter(x_count, y_count, color="green", label="Count Sketch", alpha=0.6)
 
     plt.scatter(x_real, y_real, color="red", label="True value", alpha=0.6)
 
@@ -317,40 +267,4 @@ if __name__ == "__main__":
     plt.xscale("log")
     plt.yscale("log")
 
-    plt.savefig("figure_more_counters_k7.png")
-
-    # to_show_max = []
-
-    # # print("number of ranks:", len(real_occ))
-
-    # # for rank in range(len(real_occ)):
-    # #     if  count_sketch.dispersion(rank, real_items) > 0:
-    # #         to_show_max.append((rank+1, count_sketch.dispersion(rank, real_items)))
-    # #     else:
-    # #         print("zero dispersion")
-    # #         to_show_max.append((rank+1, 1))
-
-    # to_show_max = [
-    #     (rank, count_sketch.to_show(rank, real_items)) for rank in range(len(real_occ))
-    # ]
-    # x_max, y_max = zip(*to_show_max)
-    # # x_min, y_min = zip(*to_show_min)
-
-    # plt.figure(figsize=(8, 6))
-    # plt.scatter(x_max, y_max, color="blue", label="count_sketch", alpha=0.6)
-    # # plt.scatter(x_min, y_min, color="blue", label="min", alpha=0.6)
-    # plt.xlabel("Rank")
-    # plt.ylabel("abs(max - min) ")
-    # plt.title(
-    #     "Count Sketch (t = {} ; b = {} ; N = {} ; E = {} ; parameter = {})".format(
-    #         t, b, N, E, parameter
-    #     )
-    # )
-    # plt.legend()
-    # plt.grid(True)
-    # plt.tight_layout()
-
-    # plt.xscale("log")
-    # plt.yscale("log")
-
-    # plt.savefig("figure_only_delta.png")
+    plt.savefig("count_sketch_versus_count_one_line.png")
