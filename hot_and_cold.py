@@ -15,15 +15,14 @@ modes = [
     "MAP",
     "MLE with approx",
     "MLE without approx",
-    # "MLE on class with approx",
-    # "MLE on class without approx",
-    # "MAP on class with approx",
-    # "MAP on class without approx",
+    #"MLE on class with approx",
+   # "MLE on class without approx",
+    #"MAP on class with approx",
+    #"MAP on class without approx",
 ]
 
 verbose = True
 epsilon = 1e-15
-number_of_elements_for_during = 10000
 
 
 class Hot_and_Cold_generator:
@@ -225,15 +224,18 @@ def map_class_estimator(values, approx, params):
 
 
 if __name__ == "__main__":
-    np.random.seed(int(time.time()))
+    np.random.seed(42)
     output_dir = "estimates"
     os.makedirs(output_dir, exist_ok=True)
 
-    for N_v in [100000]:
+    for N_v in [1000000]:
         for p_h_v, p_c_v in [(1 / 2, 1 / 2)]:
-            for card_H_v, card_C_v in [(1000, 9000)]:
-                for m_v in [10000]:
+            for card_H_v, card_C_v in [(10000, 90000)]:
+                for m_v in [100000]:
                     for k_v in [3]:
+
+                        number_of_elements_for_during = min(N_v, 10000)
+
                         params = {
                             "N": N_v,
                             "k": k_v,
@@ -263,18 +265,16 @@ if __name__ == "__main__":
                             * params["C_c"]
                             * (params["N"] * params["C_c"] + 1)
                         )
-                        params["sigma_h"] = (
+                        params["sigma_h"] = math.sqrt(
                             V_h * (params["card_H"] - 1) + V_c * params["card_C"]
                         )
-                        params["sigma_c"] = V_h * params["card_H"] + V_c * (
-                            params["card_C"] - 1
+                        params["sigma_c"] = math.sqrt(V_h * params["card_H"] + V_c * (
+                            params["card_C"] - 1)
                         )
-                        params["sigma_c_2"] = (
-                            params["C_c"] * (1 - params["C_c"])
-                        ) ** 2 * params["N"]
-                        params["sigma_h_2"] = (
-                            params["C_h"] * (1 - params["C_h"])
-                        ) ** 2 * params["N"]
+                        params["sigma_c_2"] = math.sqrt(
+                            params["C_c"] * params["N"])
+                        params["sigma_h_2"] = math.sqrt(
+                            params["C_h"] * params["N"])
 
                         losses = {
                             mode + suffix: []
@@ -327,19 +327,17 @@ if __name__ == "__main__":
                                     * local_params["C_c"]
                                     * (local_params["N"] * local_params["C_c"] + 1)
                                 )
-                                local_params["sigma_h"] = (
+                                local_params["sigma_h"] = math.sqrt(
                                     V_h * (local_params["card_H"] - 1)
                                     + V_c * local_params["card_C"]
                                 )
-                                local_params["sigma_c"] = V_h * local_params[
+                                local_params["sigma_c"] = math.sqrt(V_h * local_params[
                                     "card_H"
-                                ] + V_c * (local_params["card_C"] - 1)
-                                local_params["sigma_c_2"] = (
-                                    local_params["C_c"] * (1 - local_params["C_c"])
-                                ) ** 2 * local_params["N"]
-                                local_params["sigma_h_2"] = (
-                                    local_params["C_h"] * (1 - local_params["C_h"])
-                                ) ** 2 * local_params["N"]
+                                ] + V_c * (local_params["card_C"] - 1))
+                                local_params["sigma_c_2"] = math.sqrt(
+                                    local_params["C_c"] * local_params["N"])
+                                local_params["sigma_h_2"] = math.sqrt(
+                                    local_params["C_h"] * local_params["N"])
 
                                 a = Hot_and_Cold.next()
                                 count_sketch.add(a)
@@ -521,7 +519,7 @@ if __name__ == "__main__":
                                     alpha=0.6,
                                 )
 
-                                skip = max(1, len(report_data["real_items"]) // 20)
+                                skip = max(1, len(report_data["real_items"]) // 800)
                                 plt.scatter(
                                     range(0, len(report_data["estimates"]), skip),
                                     [
