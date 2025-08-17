@@ -3,9 +3,7 @@ import matplotlib.pyplot as plt
 import statistics
 import numpy as np
 import time
-import random
-import bisect
-from functools import reduce
+import os
 import pandas as pd
 from tqdm import tqdm
 from scipy.optimize import minimize
@@ -13,83 +11,48 @@ from scipy.stats import poisson
 from scipy.stats import norm
 
 # Define constants
-
-N = int(1e6)
-k = 2
-m = int(8e4)
-
-E = 10000
-
-card_H = 100
-card_C = 1000
-
-lambda_h = card_H / m
-lambda_c = card_C / m
-
-p_h = 1 / 2
-p_c = 1 / 2
-
-C_h = p_h / card_H
-C_c = p_c / card_C
-
-V_h = N / m * C_h * (N * C_h + 1)
-V_c = N / m * C_c * (N * C_c + 1)
-
-sigma_h = V_h * (card_H - 1) + V_c * card_C
-sigma_c = V_h * card_H + V_c * (card_C - 1)
-
-mu_h = C_h * N
-mu_c = C_c * N
-
-sigma_c_2 = (C_c * (1 - C_c)) ** 2 * N
-sigma_h_2 = (C_h * (1 - C_h)) ** 2 * N
-
-values = [5.0]
-
-mode = "MLE on class with approx"
-
-approx = False
+modes = [
+    "MAP",
+    "MLE with approx",
+    "MLE without approx",
+    # "MLE on class with approx",
+    # "MLE on class without approx",
+    # "MAP on class with approx",
+    # "MAP on class without approx",
+]
 
 verbose = True
-
 epsilon = 1e-15
+number_of_elements_for_during = 10000
 
 
 class Hot_and_Cold_generator:
-
     def __init__(self, p_h, card_H, card_C):
-
-        # draw with probability p_h
         self.p_h = p_h
-        self.Card_h = card_H
-        self.Card_c = card_C
+        self.card_H = card_H
+        self.card_C = card_C
 
     def next(self):
-        # Take a uniform 0-1 pseudo-random value:
         u = np.random.random()
-
-        if u <= p_h:
-            return np.random.randint(1, card_H + 1)
+        if u <= self.p_h:
+            return np.random.randint(1, self.card_H + 1)
         else:
-            return card_H + np.random.randint(1, card_C + 1)
+            return self.card_H + np.random.randint(1, self.card_C + 1)
 
 
 class Count_sketch:
     def __init__(self, k, n):
-        self.k = k  # number of hash functions
-        self.n = n  # number of counters per hash function
+        self.k = k
+        self.n = n
         self.array = [[0 for _ in range(n)] for _ in range(k)]
         self.hash_functions = []
-
         p = 2**31 - 1
-
         for _ in range(k):
             a = np.random.randint(0, p)
             b = np.random.randint(0, p)
             self.hash_functions.append(lambda x, a=a, b=b: ((a * x + b) % p) % n)
 
         self.s_functions = []
-
         for _ in range(k):
             a = np.random.randint(0, p)
             b = np.random.randint(0, p)
@@ -112,41 +75,36 @@ class Count_sketch:
                 * self.s_functions[i](element)
                 for i in range(self.k)
             ]
-        )  # Can we do better in terms of space/time complexity?
-        # I could calculate it on the fly like the min
+        )
 
 
 def gaussian(x, mu, sigma):
-    return max(
-        epsilon,
-        norm.pdf(x=x, loc=mu, scale=sigma),
-    )
+    return max(epsilon, norm.pdf(x=x, loc=mu, scale=sigma))
 
 
-def mle_estimator(values):
-
+def mle_estimator(values, approx, params):
     if approx:
         return np.mean(values)
 
     def f(x):
-        return p_h * gaussian(x, mu=0, sigma=sigma_h) + p_c * gaussian(
-            x, mu=0, sigma=sigma_c
-        )
+        return params["p_h"] * gaussian(x, mu=0, sigma=params["sigma_h"]) + params[
+            "p_c"
+        ] * gaussian(x, mu=0, sigma=params["sigma_c"])
 
     res = minimize(
         lambda x: -sum([math.log(f(val - x[0])) for val in values]),
         [np.mean(values) + 1],
         method="Nelder-Mead",
     )
+    return res.x[0]
 
-    return res
 
-
-def mle_class_estimator(values):
+def mle_class_estimator(values, approx, params):
+    mu_h, mu_c = params["mu_h"], params["mu_c"]
+    sigma_h, sigma_c = params["sigma_h"], params["sigma_c"]
 
     lower_bound_h = max(0, int(mu_h - 5 * math.sqrt(mu_h)))
     upper_bound_h = int(mu_h + 5 * math.sqrt(mu_h))
-
     lower_bound_c = max(0, int(mu_c - 5 * math.sqrt(mu_c)))
     upper_bound_c = int(mu_c + 5 * math.sqrt(mu_c))
 
@@ -172,41 +130,32 @@ def mle_class_estimator(values):
                 ]
             )
 
-    likelihood_hot = math.exp(sum([math.log(g_hot(val)) for val in values]))
-
-    likelihood_cold = math.exp(sum([math.log(g_cold(val)) for val in values]))
+    log_likelihood_hot = sum([math.log(g_hot(val)) for val in values])
+    log_likelihood_cold = sum([math.log(g_cold(val)) for val in values])
 
     estimated_class = "unknown"
     likelihood_ratio = 1
 
-    if verbose:
-        print("likelihood hot:", likelihood_hot)
-        print("likelihood cold:", likelihood_cold)
-
-    if likelihood_hot > likelihood_cold:
-        likelihood_ratio = likelihood_hot / likelihood_cold
+    if log_likelihood_hot > log_likelihood_cold:
+        likelihood_ratio = math.exp(log_likelihood_hot - log_likelihood_cold)
         estimated_class = "hot"
-
-    elif likelihood_hot < likelihood_cold:
-        likelihood_ratio = likelihood_cold / likelihood_hot
+    elif log_likelihood_cold > log_likelihood_hot:
+        likelihood_ratio = math.exp(log_likelihood_cold - log_likelihood_hot)
         estimated_class = "cold"
 
     return (estimated_class, likelihood_ratio)
 
 
-def map_estimator(values):
-
+def map_estimator(values, params):
     def pi(y):
-        res = p_h * gaussian(x=y, mu=mu_h, sigma=sigma_h_2) + p_c * gaussian(
-            x=y, mu=mu_c, sigma=sigma_c_2
-        )  # is very often zero........
-        # print("pi_val:", res)
-        return res
+        return params["p_h"] * gaussian(
+            x=y, mu=params["mu_h"], sigma=params["sigma_h_2"]
+        ) + params["p_c"] * gaussian(x=y, mu=params["mu_c"], sigma=params["sigma_c_2"])
 
     def f(x):
-        return p_h * gaussian(x, mu=0, sigma=sigma_h) + p_c * gaussian(
-            x, mu=0, sigma=sigma_c
-        )
+        return params["p_h"] * gaussian(x, mu=0, sigma=params["sigma_h"]) + params[
+            "p_c"
+        ] * gaussian(x, mu=0, sigma=params["sigma_c"])
 
     res = minimize(
         lambda x: -math.log(pi(x[0]))
@@ -214,23 +163,21 @@ def map_estimator(values):
         [np.mean(values) + 1],
         method="Nelder-Mead",
     )
+    return res.x[0]
 
-    return res
 
-
-def map_class_estimator(values):
+def map_class_estimator(values, approx, params):
+    p_h, p_c = params["p_h"], params["p_c"]
+    mu_h, mu_c = params["mu_h"], params["mu_c"]
+    sigma_h, sigma_c = params["sigma_h"], params["sigma_c"]
 
     lower_bound_h = max(0, int(mu_h - 5 * math.sqrt(mu_h)))
     upper_bound_h = int(mu_h + 5 * math.sqrt(mu_h))
-
     lower_bound_c = max(0, int(mu_c - 5 * math.sqrt(mu_c)))
     upper_bound_c = int(mu_c + 5 * math.sqrt(mu_c))
 
     def pi(y):
-        if y == "hot":
-            return p_h
-        else:
-            return p_c
+        return p_h if y == "hot" else p_c
 
     def g_hot(y):
         if approx:
@@ -254,290 +201,378 @@ def map_class_estimator(values):
                 ]
             )
 
-    likelihood_hot = math.exp(
-        math.log(pi("hot")) + sum([math.log(g_hot(val)) for val in values])
+    log_likelihood_hot = math.log(pi("hot")) + sum(
+        [math.log(g_hot(val)) for val in values]
+    )
+    log_likelihood_cold = math.log(pi("cold")) + sum(
+        [math.log(g_cold(val)) for val in values]
     )
 
-    likelihood_cold = math.exp(
-        math.log(pi("cold")) + sum([math.log(g_cold(val)) for val in values])
-    )
+    estimated_class, likelihood_ratio = "unknown", 1
 
-    estimated_class = "unknown"
-    likelihood_ratio = 1
-
-    if verbose:
-
-        print("likelihood hot:", likelihood_hot)
-        print("likelihood cold:", likelihood_cold)
-
-    if likelihood_hot > likelihood_cold:
-        likelihood_ratio = likelihood_hot / likelihood_cold
-        estimated_class = "hot"
-
-    elif likelihood_hot < likelihood_cold:
-        likelihood_ratio = likelihood_cold / likelihood_hot
-        estimated_class = "cold"
+    if log_likelihood_hot > log_likelihood_cold:
+        likelihood_ratio, estimated_class = (
+            math.exp(log_likelihood_hot - log_likelihood_cold),
+            "hot",
+        )
+    elif log_likelihood_cold > log_likelihood_hot:
+        likelihood_ratio, estimated_class = (
+            math.exp(log_likelihood_cold - log_likelihood_hot),
+            "cold",
+        )
 
     return (estimated_class, likelihood_ratio)
 
 
 if __name__ == "__main__":
-
     np.random.seed(int(time.time()))
+    output_dir = "estimates"
+    os.makedirs(output_dir, exist_ok=True)
 
-    def display_variables():
-        for var, val in globals().items():
-            if not var.startswith("__") and not callable(val):
-                print(f"{var} - {val}")
+    for N_v in [100000]:
+        for p_h_v, p_c_v in [(1 / 2, 1 / 2)]:
+            for card_H_v, card_C_v in [(1000, 9000)]:
+                for m_v in [10000]:
+                    for k_v in [3]:
+                        params = {
+                            "N": N_v,
+                            "k": k_v,
+                            "m": m_v,
+                            "card_H": card_H_v,
+                            "card_C": card_C_v,
+                            "p_h": p_h_v,
+                            "p_c": p_c_v,
+                        }
+                        params["C_h"], params["C_c"] = (
+                            params["p_h"] / params["card_H"],
+                            params["p_c"] / params["card_C"],
+                        )
+                        params["mu_h"], params["mu_c"] = (
+                            params["C_h"] * params["N"],
+                            params["C_c"] * params["N"],
+                        )
+                        V_h = (
+                            params["N"]
+                            / params["m"]
+                            * params["C_h"]
+                            * (params["N"] * params["C_h"] + 1)
+                        )
+                        V_c = (
+                            params["N"]
+                            / params["m"]
+                            * params["C_c"]
+                            * (params["N"] * params["C_c"] + 1)
+                        )
+                        params["sigma_h"] = (
+                            V_h * (params["card_H"] - 1) + V_c * params["card_C"]
+                        )
+                        params["sigma_c"] = V_h * params["card_H"] + V_c * (
+                            params["card_C"] - 1
+                        )
+                        params["sigma_c_2"] = (
+                            params["C_c"] * (1 - params["C_c"])
+                        ) ** 2 * params["N"]
+                        params["sigma_h_2"] = (
+                            params["C_h"] * (1 - params["C_h"])
+                        ) ** 2 * params["N"]
 
-    if verbose:
+                        losses = {
+                            mode + suffix: []
+                            for mode in modes
+                            for suffix in ["_final", "_during"]
+                        }
+                        losses.update({"median_final": [], "median_during": []})
 
-        print("variables: -----------------------------")
-        display_variables()
-        print()
-
-        print("MLE estimator with approx (mean): -----------------------------")
-        approx = True
-        print(mle_estimator(values=values))
-        print()
-
-        print("MLE estimator without approx: -----------------------------")
-        approx = False
-        print(mle_estimator(values=values))
-        print()
-
-        print("MLE class estimator with approx: -----------------------------")
-        approx = True
-        print(mle_class_estimator(values=values))
-        print()
-
-        print("MLE class estimator without approx: -----------------------------")
-        approx = False
-        print(mle_class_estimator(values=values))
-        print()
-
-        print("MAP estimator: -----------------------------")
-        print(map_estimator(values=values))
-        print()
-
-        print("MAP class estimator with approx: -----------------------------")
-        approx = True
-        print(map_class_estimator(values=values))
-        print()
-
-        print("MAP class estimator without approx: -----------------------------")
-        approx = False
-        print(map_class_estimator(values=values))
-        print()
-
-    for mode_v in tqdm(
-        [
-            "MLE with approx",
-            "MLE without approx",
-            # "MLE on class with approx",
-            # "MLE on class without approx",
-            "MAP",
-            # "MAP on class with approx",
-            # "MAP on class without approx",
-        ]
-    ):
-        for N_v in [10000]:
-            for p_h_v, p_c_v in [(1/2, 1/2), (1 / 3, 2 / 3)]:
-                for card_H_v, card_C_v in [(100, 1000)]:
-                    for m_v in [1000]:
-                        for k_v in [1, 3]:
-
-                            # redefine constants
-                            N = N_v
-                            k = k_v
-                            m = m_v
-
-                            card_H = card_H_v
-                            card_C = card_C_v
-
-                            lambda_h = card_H / m
-                            lambda_c = card_C / m
-
-                            p_h = p_h_v
-                            p_c = p_c_v
-
-                            C_h = p_h / card_H
-                            C_c = p_c / card_C
-
-                            V_h = N / m * C_h * (N * C_h + 1)
-                            V_c = N / m * C_c * (N * C_c + 1)
-
-                            sigma_h = V_h * (card_H - 1) + V_c * card_C
-                            sigma_c = V_h * card_H + V_c * (card_C - 1)
-
-                            mu_h = C_h * N
-                            mu_c = C_c * N
-
-                            sigma_c_2 = (C_c * (1 - C_c)) ** 2 * N
-                            sigma_h_2 = (C_h * (1 - C_h)) ** 2 * N
-
-                            values = [5.0]
-
-                            mode = mode_v
-
-                            approx = False
-
-                            epsilon = 1e-15
-
-                            # Fill a Count Sketch
-
-                            count_sketch = Count_sketch(k, m)
-
-                            real_occ = dict()
-
+                        for t in range(3):
+                            loss_during = {mode: 0 for mode in modes}
+                            loss_median_during = 0
+                            count_sketch = Count_sketch(params["k"], params["m"])
+                            real_occ = {}
                             Hot_and_Cold = Hot_and_Cold_generator(
-                                p_h=p_h, card_H=card_H, card_C=card_C
+                                p_h=params["p_h"],
+                                card_H=params["card_H"],
+                                card_C=params["card_C"],
                             )
 
-                            for _ in tqdm(range(N)):
+                            for N_rank in tqdm(
+                                range(params["N"]), desc=f"Simulation {t+1}/3"
+                            ):
+
+                                local_params = {
+                                    "N": N_rank,
+                                    "k": k_v,
+                                    "m": m_v,
+                                    "card_H": card_H_v,
+                                    "card_C": card_C_v,
+                                    "p_h": p_h_v,
+                                    "p_c": p_c_v,
+                                }
+                                local_params["C_h"], local_params["C_c"] = (
+                                    local_params["p_h"] / local_params["card_H"],
+                                    local_params["p_c"] / local_params["card_C"],
+                                )
+                                local_params["mu_h"], local_params["mu_c"] = (
+                                    local_params["C_h"] * local_params["N"],
+                                    local_params["C_c"] * local_params["N"],
+                                )
+                                V_h = (
+                                    local_params["N"]
+                                    / local_params["m"]
+                                    * local_params["C_h"]
+                                    * (local_params["N"] * local_params["C_h"] + 1)
+                                )
+                                V_c = (
+                                    local_params["N"]
+                                    / local_params["m"]
+                                    * local_params["C_c"]
+                                    * (local_params["N"] * local_params["C_c"] + 1)
+                                )
+                                local_params["sigma_h"] = (
+                                    V_h * (local_params["card_H"] - 1)
+                                    + V_c * local_params["card_C"]
+                                )
+                                local_params["sigma_c"] = V_h * local_params[
+                                    "card_H"
+                                ] + V_c * (local_params["card_C"] - 1)
+                                local_params["sigma_c_2"] = (
+                                    local_params["C_c"] * (1 - local_params["C_c"])
+                                ) ** 2 * local_params["N"]
+                                local_params["sigma_h_2"] = (
+                                    local_params["C_h"] * (1 - local_params["C_h"])
+                                ) ** 2 * local_params["N"]
+
                                 a = Hot_and_Cold.next()
                                 count_sketch.add(a)
                                 real_occ[a] = real_occ.get(a, 0) + 1
 
-                            real_items = sorted(
-                                [(value, key) for key, value in real_occ.items()],
-                                reverse=True,
-                            )
-                            estimates = []
-
-                            # estimate the values
-                            loss = 0
-
-                            for value, key in tqdm(real_items):
-                                values = [
-                                    count_sketch.array[i][
-                                        count_sketch.hash_functions[i](key)
+                                if (
+                                    params["N"] - N_rank
+                                    <= number_of_elements_for_during
+                                ):
+                                    values = [
+                                        count_sketch.array[i][
+                                            count_sketch.hash_functions[i](a)
+                                        ]
+                                        * count_sketch.s_functions[i](a)
+                                        for i in range(count_sketch.k)
                                     ]
-                                    * count_sketch.s_functions[i](key)
-                                    for i in range(count_sketch.k)
-                                ]
+                                    value = real_occ[a]
+                                    estimate_median = np.median(values)
+                                    loss_median_during += (value - estimate_median) ** 2
 
-                                if mode == "MAP":
-                                    estimates.append(
-                                        map_estimator(values=values).x[0]
-                                    )
-                                elif mode == "MLE with approx":
-                                    approx = True
-                                    estimates.append(mle_estimator(values=values))
-                                elif mode == "MLE without approx":
-                                    approx = False
-                                    estimates.append(
-                                        mle_estimator(values=values).x[0]
-                                    )
-                                elif mode == "MLE on class with approx":
-                                    approx = True
-                                    estimates.append(
-                                        mle_class_estimator(values=values)
-                                    )
-                                elif mode == "MLE on class without approx":
-                                    approx = False
-                                    estimates.append(
-                                        mle_class_estimator(values=values)
-                                    )
-                                elif mode == "MAP on class with approx":
-                                    approx = True
-                                    estimates.append(
-                                        map_class_estimator(values=values)
-                                    )
-                                elif mode == "MAP on class without approx":
-                                    approx = False
-                                    estimates.append(
-                                        map_class_estimator(values=values)
-                                    )
-                                else:
-                                    raise Exception("Unknown mode")
+                                    for mode in modes:
+                                        approx = "with approx" in mode
+                                        if "class" in mode:
+                                            estimate = (
+                                                map_class_estimator(
+                                                    values, approx, local_params
+                                                )[0]
+                                                if "MAP" in mode
+                                                else mle_class_estimator(
+                                                    values, approx, local_params
+                                                )[0]
+                                            )
+                                            if (
+                                                estimate == "hot"
+                                                and a > params["card_H"]
+                                            ) or (
+                                                estimate == "cold"
+                                                and a <= params["card_H"]
+                                            ):
+                                                loss_during[mode] += 1
+                                        else:
+                                            if mode == "MAP":
 
-                                if "class" not in mode:
-                                    loss += (value - estimates[-1]) ** 2
-                                else:
-                                    if (estimates[-1][0] == "hot" and key > card_H) or (estimates[-1][0] == "cold" and key <= card_H):
-                                        loss += 1
-                            
-                            loss = loss/len(estimates)
+                                                estimate = map_estimator(
+                                                    values, local_params
+                                                )
+                                            else:
+                                                estimate = mle_estimator(
+                                                    values, approx, local_params
+                                                )
+                                            loss_during[mode] += (value - estimate) ** 2
 
-                            if "class" not in mode:
-                                # create the plot
-
-                                plt.figure(figsize=(12, 6))
-
-                                colors = [
-                                    "green" if key <= card_H else "blue"
-                                    for _, key in real_items
-                                ]
-                                plt.scatter(
-                                    [i for i in range(len(real_items))],
-                                    [value for (value, key) in real_items],
-                                    c=colors,
-                                    label="true value",
-                                    marker="o",
+                            losses["median_during"].append(
+                                loss_median_during / number_of_elements_for_during
+                            )
+                            for mode in modes:
+                                losses[mode + "_during"].append(
+                                    loss_during[mode] / number_of_elements_for_during
                                 )
 
+                            real_items = sorted(
+                                [(v, k) for k, v in real_occ.items()], reverse=True
+                            )
+                            estimates_median = [
+                                count_sketch.point_query(key) for _, key in real_items
+                            ]
+                            loss_median_final = sum(
+                                (val - est) ** 2
+                                for (val, _), est in zip(real_items, estimates_median)
+                            )
+                            losses["median_final"].append(
+                                loss_median_final / len(real_items) if real_items else 0
+                            )
+
+                            if t == 2:
+                                final_reports = {}
+
+                            for mode in modes:
+                                approx = "with approx" in mode
+                                estimates = []
+                                for _, key in real_items:
+                                    values = [
+                                        count_sketch.array[i][
+                                            count_sketch.hash_functions[i](key)
+                                        ]
+                                        * count_sketch.s_functions[i](key)
+                                        for i in range(params["k"])
+                                    ]
+                                    if "class" in mode:
+                                        estimates.append(
+                                            map_class_estimator(values, approx, params)
+                                            if "MAP" in mode
+                                            else mle_class_estimator(
+                                                values, approx, params
+                                            )
+                                        )
+                                    else:
+                                        if mode == "MAP":
+                                            estimates.append(
+                                                map_estimator(values, params)
+                                            )
+                                        else:
+                                            estimates.append(
+                                                mle_estimator(values, approx, params)
+                                            )
+
+                                loss_final = 0
+                                if "class" in mode:
+                                    for (val, key), est in zip(real_items, estimates):
+                                        if (
+                                            est[0] == "hot" and key > params["card_H"]
+                                        ) or (
+                                            est[0] == "cold" and key <= params["card_H"]
+                                        ):
+                                            loss_final += 1
+                                else:
+                                    loss_final = sum(
+                                        (val - est) ** 2
+                                        for (val, _), est in zip(real_items, estimates)
+                                    )
+
+                                losses[mode + "_final"].append(
+                                    loss_final / len(real_items) if real_items else 0
+                                )
+                                if t == 2:
+                                    final_reports[mode] = {
+                                        "estimates": estimates,
+                                        "real_items": real_items,
+                                        "estimates_median": estimates_median,
+                                    }
+
+                        print("\n--- Final results (mean taken on 3 simulations) ---")
+                        param_str = f"p_h={params['p_h']}, N={params['N']}, m={params['m']}, k={params['k']}, card_H={params['card_H']}, card_C={params['card_C']}"
+
+                        loss_median_final = round(np.mean(losses["median_final"]), 3)
+                        loss_median_during = round(np.mean(losses["median_during"]), 3)
+
+                        for mode in modes:
+                            loss_final = round(np.mean(losses[mode + "_final"]), 3)
+                            loss_during = round(np.mean(losses[mode + "_during"]), 3)
+                            report_data = final_reports[mode]
+
+                            if "class" in mode:
+                                data = {
+                                    "Rank": range(len(report_data["real_items"])),
+                                    "True Class": [
+                                        "hot" if key <= params["card_H"] else "cold"
+                                        for _, key in report_data["real_items"]
+                                    ],
+                                    "Estimated Class": [
+                                        x[0] for x in report_data["estimates"]
+                                    ],
+                                    "Likelihood Ratio": [
+                                        x[1] for x in report_data["estimates"]
+                                    ],
+                                }
+                                df = pd.DataFrame(data)
+                                if verbose:
+                                    print(f"\n--- Results for: {mode} ---\n{df.head()}")
+                                filename = os.path.join(
+                                    output_dir,
+                                    f"class_estimates - ({mode}, {param_str}).csv",
+                                )
+                                df.to_csv(filename, index=False)
+                                with open(filename, "a") as f:
+                                    f.write(f"\nAverage Loss,,,,{loss_final}")
+                            else:
+                                plt.figure(figsize=(12, 6))
+                                colors = [
+                                    "green" if key <= params["card_H"] else "blue"
+                                    for _, key in report_data["real_items"]
+                                ]
                                 plt.scatter(
-                                    [i for i in range(len(real_items))],
-                                    estimates,
+                                    range(len(report_data["real_items"])),
+                                    [v for v, k in report_data["real_items"]],
+                                    c=colors,
+                                    label="True value",
+                                    marker="o",
+                                    alpha=0.6,
+                                )
+
+                                skip = max(1, len(report_data["real_items"]) // 20)
+                                plt.scatter(
+                                    range(0, len(report_data["estimates"]), skip),
+                                    [
+                                        report_data["estimates"][i]
+                                        for i in range(
+                                            0, len(report_data["estimates"]), skip
+                                        )
+                                    ],
                                     color="red",
-                                    label="estimates",
+                                    label="Model estimates",
                                     marker="x",
                                 )
+                                plt.scatter(
+                                    range(
+                                        0, len(report_data["estimates_median"]), skip
+                                    ),
+                                    [
+                                        report_data["estimates_median"][i]
+                                        for i in range(
+                                            0,
+                                            len(report_data["estimates_median"]),
+                                            skip,
+                                        )
+                                    ],
+                                    color="black",
+                                    label="Median estimates",
+                                    marker="+",
+                                )
 
-                                plt.title(
-                                    "Estimates (" + mode + ") - (p_h = {}, N = {}, m = {}, k= {}, card_H = {}, card_C = {})".format(
-                                        p_h, N, m, k, card_H, card_C
-                                    )
-                                )
+                                plt.title(f"Frequency Estimates ({mode})\n{param_str}")
                                 plt.xlabel(
-                                    "rank in stream (loss = {})".format(loss)
+                                    f"Item Rank\n(Final Loss: Model={loss_final}, Median={loss_median_final} | During Loss: Model={loss_during}, Median={loss_median_during})"
                                 )
+                                plt.ylabel("Frequency")
                                 plt.grid(True)
                                 plt.legend()
                                 plt.tight_layout()
                                 plt.savefig(
-                                    "estimates/count_estimates - ("
-                                    + mode
-                                    + ", p_h = {}, N = {}, m = {}, k= {}, card_H = {}, card_C = {}).png".format(
-                                        p_h, N, m, k, card_H, card_C
+                                    os.path.join(
+                                        output_dir,
+                                        f"freq_estimates - ({mode}, {param_str}).png",
                                     )
                                 )
-
-                            else:
-
-                                data = {
-                                    "Rank": [i for i in range(len(real_items))],
-                                    "True Class": [
-                                        "hot" if key <= card_H else "cold"
-                                        for _, key in real_items
-                                    ],
-                                    "Estimated Class": [x[0] for x in estimates],
-                                    "Likelihood Ratio": [x[1] for x in estimates],
-                                }
-
-                                df = pd.DataFrame(data)
-
-                                if verbose:
-                                    print(df)
-
-                                filename = (
-                                    "estimates/class_estimates - ("
-                                    + mode
-                                    + ", p_h = {}, N = {}, m = {}, k= {}, card_H = {}, card_C = {}).csv".format(
-                                        p_h, N, m, k, card_H, card_C
-                                    )
-                                )
-
-                                df.to_csv(
-                                    filename,
-                                    index=False,
-                                )
-
-                                with open(filename, "a") as f:
-                                    f.write(f"\nLoss,,,,{loss}")
+                                plt.close()
 
                             if verbose:
+                                print(
+                                    f"\nMean loss for {mode}:\n  - final loss: {loss_final}\n  - 'during' loss: {loss_during}"
+                                )
 
-                                # display the error
-                                print("loss:", loss)
+                        if verbose:
+                            print(
+                                f"\nMean loss for Median:\n  - final loss: {loss_median_final}\n  - 'during' loss: {loss_median_during}"
+                            )
