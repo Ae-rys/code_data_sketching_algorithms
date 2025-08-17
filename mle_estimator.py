@@ -199,3 +199,96 @@ def mle_estimator_count_min(Gains, z, N, E, omega, min_rank, max_rank, precision
             estimated_rank = rank
 
     return estimated_rank
+
+if __name__ == "__main__":
+    prec = 500
+    param_z = 1.2
+    N = 1000
+    E = 100
+    nb_comp = 80
+    nb_fun = 3
+
+    np.random.seed(42)
+    random.seed(42)
+
+    print("Setting up simulation...")
+    zipf_gen = ZipfGenerator(n=E, alpha=param_z)
+    cm_sketch = Count_min_sketch(k=nb_fun, n=nb_comp)
+    real_occ = {}
+
+    print(f"Generating stream of {N} elements...")
+    for _ in tqdm(range(N), desc="Processing Stream"):
+        item = zipf_gen.next()
+        cm_sketch.add(item)
+        real_occ[item] = real_occ.get(item, 0) + 1
+    
+    true_ranks = []
+    estimated_ranks = []
+    
+    unique_items = sorted(real_occ.keys())
+    
+    print(f"\nEstimating ranks for {len(unique_items)} unique items...")
+    def clean_mle_estimator(Gains, z, N, E, omega, min_rank, max_rank, local_ranks_list, local_likelihoods_list, precision=1000):
+        val_sum = sum(1 / (i**z) for i in range(1, E + 1))
+        alpha = 1 / val_sum
+        
+        estimated_rank = -1
+        max_log_likelihood = -float('inf')
+        
+        for rank in tqdm(range(max(1, min_rank), min(E, max_rank) + 1), desc="Testing Ranks", leave=False):
+            local_ranks_list.append(rank)
+            log_likelihood = 0
+            for gain in Gains:
+                prob = monte_carlo(rank, gain, z, N, E, omega, alpha, n=precision)
+                if prob == 0:
+                    log_likelihood = -float('inf')
+                    break
+                else:
+                    log_likelihood += math.log(prob)
+            
+            current_likelihood = math.exp(log_likelihood) if log_likelihood > -float('inf') else 0
+            local_likelihoods_list.append(current_likelihood)
+
+            if log_likelihood > max_log_likelihood:
+                max_log_likelihood = log_likelihood
+                estimated_rank = rank
+        return estimated_rank
+
+    for true_rank in tqdm(unique_items, desc="Estimating Items"):
+        gain = cm_sketch.point_query(true_rank)
+        
+        temp_ranks = []
+        temp_likelihoods = []
+        
+        estimated_rank = clean_mle_estimator(
+            Gains=[gain], 
+            z=param_z, 
+            N=N, 
+            E=E, 
+            omega=nb_comp,
+            min_rank=1, 
+            max_rank=E,
+            local_ranks_list=temp_ranks,
+            local_likelihoods_list=temp_likelihoods,
+            precision=prec
+        )
+        
+        true_ranks.append(true_rank)
+        estimated_ranks.append(estimated_rank)
+
+    print("\nGenerating plot...")
+    plt.figure(figsize=(10, 8))
+    
+    plt.scatter(true_ranks, true_ranks, color='red', alpha=0.6, label='True rank')
+    
+    plt.scatter(true_ranks, estimated_ranks, color='blue', alpha=0.6, label='Estimated ranks')
+
+    title_str = f"MLE : prec = {prec}, param = {param_z}, N = {N}, E = {E}, nb_comp = {nb_comp}, nb_fun = {nb_fun}"
+    plt.title(title_str)
+    plt.xlabel("Rank")
+    plt.ylabel("Estimation")
+    
+    plt.grid(True)
+    plt.legend()
+    
+    plt.show()
