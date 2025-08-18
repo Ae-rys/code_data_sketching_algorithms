@@ -30,7 +30,7 @@ class ZipfGenerator:
 
 
 # We perform a count-min on a single row
-class Count_min_bloom_filter:
+class Count_min_one_line:
     def __init__(self, k, n, conservative=False):
         self.k = k  # number of hash functions
         self.n = n  # number of counters
@@ -70,7 +70,7 @@ class Count_min_bloom_filter:
 
 
 # On a single row
-class Count_sketch_bloom_filter:
+class Count_sketch_one_line:
     def __init__(self, k, n):
         self.k = k  # number of hash functions
         self.n = n  # number of counters
@@ -207,8 +207,8 @@ if __name__ == "__main__":
 
     zipf = ZipfGenerator(E, parameter)
 
-    count_min_sketch = Count_min_bloom_filter(t, b, conservative=True)
-    count_sketch = Count_sketch_bloom_filter(t, b)
+    count_min_sketch = Count_min_one_line(t, b, conservative=True)
+    count_sketch = Count_sketch_one_line(t, b)
 
     real_occ = dict()
 
