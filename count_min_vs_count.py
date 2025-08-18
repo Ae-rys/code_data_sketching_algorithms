@@ -113,9 +113,9 @@ class Count_sketch:
 
 if __name__ == "__main__":
 
-    np.random.seed(int(time.time()))
+    np.random.seed(42)
 
-    parameters = [1.5]
+    parameters = [1.2]
 
     for parameter in parameters:
 
@@ -123,7 +123,7 @@ if __name__ == "__main__":
         b = int(8e2)
         N = int(1e6)
         E = int(1e5)
-        conservative=False
+        conservative=True
 
         zipf = ZipfGenerator(E, parameter)
 
