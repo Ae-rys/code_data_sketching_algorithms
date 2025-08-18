@@ -197,7 +197,7 @@ class Count_sketch_bloom_filter:
 
 if __name__ == "__main__":
 
-    np.random.seed(int(time.time()))
+    np.random.seed(42)
 
     parameter = 1.2
     t = 11
