@@ -165,12 +165,12 @@ if __name__ == "__main__":
         x_real, y_real = zip(*[(i + 1, real_items[i][0]) for i in range(len(real_items))])
 
         plt.figure(figsize=(8, 6))
-        plt.scatter(x_count, y_count, color="green", label="Count Sketch", alpha=0.6)
-        plt.scatter(x_count_min, y_count_min, color="blue", label="Count Min", alpha=0.6)
+        plt.scatter(x_count, y_count, color="green", label="Count Sketch estimation", alpha=0.6)
+        plt.scatter(x_count_min, y_count_min, color="blue", label="Count Min estimation", alpha=0.6)
         plt.scatter(x_real, y_real, color="red", label="True Counts", alpha=0.6)
 
         plt.xlabel("Rank")
-        plt.ylabel("Estimate")
+        plt.ylabel("Frequency (#occurences)")
         plt.title("Count Min Vs Count")
         plt.legend()
         plt.grid(True)
