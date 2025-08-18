@@ -280,7 +280,7 @@ if __name__ == "__main__":
     
     plt.scatter(true_ranks, true_ranks, color='red', alpha=0.6, label='True rank')
     
-    plt.scatter(true_ranks, estimated_ranks, color='blue', alpha=0.6, label='Estimated ranks')
+    plt.scatter(true_ranks, estimated_ranks, color='blue', alpha=0.6, label='Estimated rank')
 
     title_str = f"MLE : prec = {prec}, param = {param_z}, N = {N}, E = {E}, nb_comp = {nb_comp}, nb_fun = {nb_fun}"
     plt.title(title_str)
