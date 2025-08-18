@@ -131,14 +131,13 @@ class Count_sketch:
 
 
 def monte_carlo(r_q, G, z, N, E, nb_counters, alpha, n=1000):
-    print("starting estimation")
     spiked_zipf = ZipfGenerator_spiked(E, alpha, r_q)
 
     res = 0
 
     val = alpha / r_q**z
 
-    for s in tqdm(range(n)):
+    for s in range(n):
         colliding_values = set()
         for j in range(1, E + 1):
             if j != r_q and random.randint(1, nb_counters) == 1:
