@@ -15,10 +15,10 @@ modes = [
     "MAP",
     "MLE with approx",
     "MLE without approx",
-    #"MLE on class with approx",
-   # "MLE on class without approx",
-    #"MAP on class with approx",
-    #"MAP on class without approx",
+    "MLE on class with approx",
+    "MLE on class without approx",
+    "MAP on class with approx",
+    "MAP on class without approx",
 ]
 
 verbose = True
@@ -228,13 +228,13 @@ if __name__ == "__main__":
     output_dir = "estimates"
     os.makedirs(output_dir, exist_ok=True)
 
-    for N_v in [1000000]:
+    for N_v in [100000]:
         for p_h_v, p_c_v in [(1 / 2, 1 / 2)]:
             for card_H_v, card_C_v in [(10000, 90000)]:
-                for m_v in [100000]:
+                for m_v in [10000]:
                     for k_v in [3]:
 
-                        number_of_elements_for_during = min(N_v, 10000)
+                        number_of_elements_for_during = min(N_v // 10, 10000)
 
                         params = {
                             "N": N_v,
@@ -415,7 +415,7 @@ if __name__ == "__main__":
                             if t == 2:
                                 final_reports = {}
 
-                            for mode in modes:
+                            for mode in tqdm(modes, desc="Calculating loss_final"):
                                 approx = "with approx" in mode
                                 estimates = []
                                 for _, key in real_items:
