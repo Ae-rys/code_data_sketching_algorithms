@@ -69,7 +69,7 @@ class Count_min_sketch:
 
 
 # We perform a count-min on a single row
-class Count_min_bloom_filter:
+class Count_min_one_line:
     def __init__(self, k, n, conservative=False):
         self.k = k  # number of hash functions
         self.n = n  # number of counters
@@ -121,14 +121,14 @@ if __name__ == "__main__":
     zipf = ZipfGenerator(E, parameter)
 
     count_min_sketch = Count_min_sketch(t, int(b / t))
-    count_min_bloom_filter_instance = Count_min_bloom_filter(t, b)
+    count_min_one_line_instance = Count_min_one_line(t, b)
 
     real_occ = dict()
 
     for _ in range(N):
         a = zipf.next()
         count_min_sketch.add(a)
-        count_min_bloom_filter_instance.add(a)
+        count_min_one_line_instance.add(a)
         real_occ[a] = real_occ.get(a, 0) + 1
 
     real_items = sorted([(value, key) for key, value in real_occ.items()], reverse=True)
@@ -138,14 +138,14 @@ if __name__ == "__main__":
         for i in range(len(real_items))
     ]
 
-    res_count_min_bloom_filter = [
-        (i + 1, count_min_bloom_filter_instance.point_query(real_items[i][1]))
+    res_count_min_one_line = [
+        (i + 1, count_min_one_line_instance.point_query(real_items[i][1]))
         for i in range(len(real_items))
     ]
 
     x_count_min, y_count_min = zip(*res_count_min)
-    x_count_min_bloom_filter, y_count_min_bloom_filter = zip(
-        *res_count_min_bloom_filter
+    x_count_min_one_line, y_count_min_one_line = zip(
+        *res_count_min_one_line
     )
     x_real, y_real = zip(*[(i + 1, real_items[i][0]) for i in range(len(real_items))])
 
@@ -156,10 +156,10 @@ if __name__ == "__main__":
     )
 
     plt.scatter(
-        x_count_min_bloom_filter,
-        y_count_min_bloom_filter,
+        x_count_min_one_line,
+        y_count_min_one_line,
         color="green",
-        label="Count-Min Bloom Filter",
+        label="Spectral Bloom Filter",
         alpha=0.6,
     )
 
@@ -167,7 +167,7 @@ if __name__ == "__main__":
 
     plt.xlabel("Rank")
     plt.ylabel("Estimate")
-    plt.title("Counting Bloom Filter vs Count-Min Sketch Estimate")
+    plt.title("Spectral Bloom Filter vs Count-Min Sketch Estimate")
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
@@ -175,4 +175,4 @@ if __name__ == "__main__":
     plt.xscale("log")
     plt.yscale("log")
 
-    plt.savefig("experiment_CBF_CM.png")
+    plt.savefig("experiment_SBF_CM.png")
